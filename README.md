@@ -154,7 +154,7 @@ Each worklog starts at 09:00 on its day (JaaS needs a start time), and its comme
 
 ## How the Logger learns
 
-Macondo Logger doesn't train its own AI model. Every time it writes a draft, it gives the AI a few real examples of how bugs are written **in your project**, and the AI follows that format. What improves with use are those examples. This is called *few-shot learning*.
+Macondo Logger doesn't train a Groq model. Every time it writes a draft, it gives the machine learning component a few real examples of how bugs are written **in your project**, and the ML follows that format. What improves with use are those examples. This is called *few-shot learning*.
 
 The examples come from, in order of priority:
 
