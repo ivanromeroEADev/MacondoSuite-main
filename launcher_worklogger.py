@@ -1,4 +1,4 @@
-"""Punto de entrada del .exe de Macondo WorkLogger (solo registro de horas)."""
+"""Entry point for the Macondo WorkLogger .exe (time logging only)."""
 import _launcher_base
 
 if __name__ == "__main__":

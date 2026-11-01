@@ -1,26 +1,14 @@
 """
-WorkLogger - interfaz (la pantalla para registrar horas en JaaS).
+WorkLogger screens.
 
-Reemplaza la herramienta de consola por una pantalla con el estilo Macondo.
-Igual que el Bug Logger, se expone como render() para poder usarla sola
-(worklogger_app.py) o como una pestaña (macondo_suite_app.py). La conexion
-(token de JaaS) la resuelve macondo_login antes de llamar a render().
+render() is used on its own (worklogger_app.py) or as a tab (macondo_suite_app.py).
 
-El flujo tiene dos etapas, en st.session_state["wl_stage"]:
-  setup -> elegir proyecto, cargar versiones por API, elegir version y rango de fechas
-  log   -> registrar el tiempo por dia y por actividad, revisar y enviar
+Stages, kept in st.session_state["wl_stage"]:
+  setup: pick the project, load versions, pick a version and dates
+  log:   type the hours per day and activity, review, send
 
-Decision de diseno del registro (etapa log):
-  Todos los dias y sus actividades van dentro de UN FORMULARIO (st.form). Dentro
-  de un formulario, escribir en los campos NO recarga la pagina: Streamlit solo
-  corre el script cuando pulsas el boton del formulario. Asi escribes todas las
-  horas de la semana de corrido, sin que nada salte, se cierre ni te devuelva el
-  scroll arriba. Al pulsar "Guardar y revisar" se calcula el resumen; despues,
-  un boton aparte envia a JaaS. (Antes, cada hora recargaba la pagina y el scroll
-  saltaba a la primera fecha: por eso se sentia que "se saltaba".)
-
-Los IDs de los tickets se traen frescos desde JaaS cada vez que cargas una
-version, asi que siempre registras contra las actividades actuales.
+All the day inputs live inside one st.form, so typing doesn't rerun the page
+and the scroll doesn't jump back to the first day.
 """
 
 from datetime import date
@@ -30,144 +18,132 @@ import streamlit as st
 import worklogger_core as wl
 
 
-# ---------------------------------------------------------------------------
-# estado
-# ---------------------------------------------------------------------------
+# State
 
 def _init_state():
     defaults = {
         "wl_stage": "setup",
         "wl_project": wl.DEFAULT_PROJECT,
-        "wl_project_resolved": wl.DEFAULT_PROJECT,  # el proyecto ya normalizado (MAYUS) que se consulto
-        "wl_versions": None,     # lista de versiones detectadas, o None si aun no se cargaron
-        "wl_all_issues": None,   # tickets crudos de JaaS (para recortar actividades por version)
+        "wl_project_resolved": wl.DEFAULT_PROJECT,  # the already normalized (UPPERCASE) project that was queried
+        "wl_versions": None,     # list of detected versions, or None if not loaded yet
+        "wl_all_issues": None,   # raw JaaS tickets (to slice the activities per version)
         "wl_version_index": 0,
-        "wl_activities": {},     # {actividad: ticket_key} de la version elegida
-        "wl_workdays": [],       # lista de date (dias habiles del rango)
-        "wl_results": None,      # resultados del ultimo envio, o None
+        "wl_activities": {},     # {activity: ticket_key} for the chosen version
+        "wl_workdays": [],       # list of dates (business days in the range)
+        "wl_results": None,      # results of the last submission, or None
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
 
 
 def _input_key(day, activity):
-    """
-    Clave estable del input de tiempo de una actividad en un dia concreto.
-    Como todos los inputs se dibujan siempre, Streamlit conserva su valor solo:
-    leemos el tiempo directamente de cada input, sin almacen aparte.
-    """
+    """Widget key for one activity on one day."""
     return f"wl_in::{day.isoformat()}::{activity}"
 
 
-# ---------------------------------------------------------------------------
-# etapa: configuracion (proyecto, version y fechas)
-# ---------------------------------------------------------------------------
+# Stage: setup (project, version and dates)
 
 def _load_versions():
-    """Trae los tickets del proyecto desde JaaS y detecta las versiones disponibles."""
-    # Leemos lo que el usuario escribio en el input y lo normalizamos (MAYUS) en una
-    # variable aparte. OJO: no se puede reasignar st.session_state["wl_project"] aqui,
-    # porque Streamlit prohibe modificar la clave de un widget despues de crearlo.
+    """Fetches the project's tickets from JaaS and detects the available versions."""
+    # Normalized in a separate variable: Streamlit doesn't allow changing a widget's value after it's drawn.
     project = (st.session_state.get("wl_project") or wl.DEFAULT_PROJECT).strip().upper() or wl.DEFAULT_PROJECT
-    with st.spinner(f"Trayendo versiones de {project} desde JaaS..."):
+    with st.spinner(f"Fetching versions of {project} from JaaS..."):
         all_issues = wl.fetch_all_issues(st.session_state.jaas_token, project)
         versions = wl.find_available_versions(all_issues)
     st.session_state.wl_all_issues = all_issues
     st.session_state.wl_versions = versions
-    st.session_state.wl_project_resolved = project  # para mostrarlo luego sin tocar el widget
+    st.session_state.wl_project_resolved = project  # to show it later without touching the widget
 
 
 def _stage_setup():
-    st.caption(f"conectado como {st.session_state.user_display_name}")
-    st.subheader("Versión y fechas")
+    st.caption(f"connected as {st.session_state.user_display_name}")
+    st.subheader("Version and dates")
 
-    # --- proyecto ---
+    # Project
     col_p, col_btn = st.columns([2, 1])
     col_p.text_input(
-        "Proyecto de registro de tiempo",
+        "Time-tracking project",
         key="wl_project",
-        help="FCQV para skate. Otros equipos ponen aqui su propio proyecto.",
+        help="FCQV for skate. Other teams enter their own project here.",
     )
     with col_btn:
-        st.markdown("<div style='height:1.8em'></div>", unsafe_allow_html=True)  # alinea el boton con el input
-        if st.button("Cargar versiones", type="primary", key="wl_btn_load"):
+        st.markdown("<div style='height:1.8em'></div>", unsafe_allow_html=True)  # lines the button up with the input
+        if st.button("Load versions", type="primary", key="wl_btn_load"):
             _load_versions()
             st.rerun()
 
     versions = st.session_state.wl_versions
     if versions is None:
-        st.info("Pon el proyecto y pulsa **Cargar versiones** para traer los tickets actuales desde JaaS.")
+        st.info("Enter the project and press **Load versions** to fetch the current tickets from JaaS.")
         return
 
     if not versions:
         st.error(
-            f"No encontre versiones de 'Time Tracking' en {st.session_state.wl_project_resolved}. "
-            "Revisa que el proyecto sea correcto y que tengas acceso a esos tickets."
+            f"Couldn't find any 'Time Tracking' versions in {st.session_state.wl_project_resolved}. "
+            "Check that the project is right and that you have access to those tickets."
         )
         return
 
-    # --- version ---
-    labels = [f"v{v['label']}  ({v['key']})" for v in versions[:10]]  # las 10 mas recientes
-    chosen_label = st.selectbox("Versión", labels, key="wl_version_label")
+    # Version
+    labels = [f"v{v['label']}  ({v['key']})" for v in versions[:10]]  # the 10 most recent
+    chosen_label = st.selectbox("Version", labels, key="wl_version_label")
     st.session_state.wl_version_index = labels.index(chosen_label)
 
-    # --- rango de fechas ---
+    # Date range
     today = date.today()
     col_a, col_b = st.columns(2)
-    start = col_a.date_input("Desde", value=today, key="wl_start")
-    end = col_b.date_input("Hasta", value=today, key="wl_end")
+    start = col_a.date_input("From", value=today, key="wl_start")
+    end = col_b.date_input("To", value=today, key="wl_end")
 
     if start > end:
-        st.warning("La fecha 'Desde' es posterior a 'Hasta'.")
+        st.warning("The 'From' date is after the 'To' date.")
         return
 
     workdays = wl.get_workdays(start, end)
     if not workdays:
-        st.warning("No hay dias habiles (lunes a viernes) en ese rango.")
+        st.warning("There are no business days (Monday to Friday) in that range.")
         return
-    st.caption(f"{len(workdays)} dia(s) habil(es): " + ", ".join(d.strftime("%a %d/%m") for d in workdays))
+    st.caption(f"{len(workdays)} business day(s): " + ", ".join(d.strftime("%a %d/%m") for d in workdays))
 
-    if st.button("Preparar días", type="primary", key="wl_btn_prepare"):
+    if st.button("Prepare days", type="primary", key="wl_btn_prepare"):
         activities = wl.activities_for_version(
             st.session_state.wl_all_issues, versions, st.session_state.wl_version_index
         )
         if not activities:
-            st.error("Esa version no tiene actividades para registrar.")
+            st.error("That version has no activities to log.")
             return
         st.session_state.wl_activities = activities
         st.session_state.wl_workdays = workdays
         st.session_state.wl_results = None
-        # Limpiamos cualquier hora de un periodo anterior.
+        # We clear any hours from a previous period.
         for key in [k for k in st.session_state if str(k).startswith("wl_in::")]:
             del st.session_state[key]
         st.session_state.wl_stage = "log"
         st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# etapa: registro de horas (todos los dias visibles a la vez)
-# ---------------------------------------------------------------------------
+# Stage: logging hours (every day visible at once)
 
 def _render_day_inputs():
-    """Dibuja, dentro del formulario, cada dia con sus actividades y un input de tiempo."""
+    """Draws, inside the form, each day with its activities and a time input."""
     for day in st.session_state.wl_workdays:
         st.divider()
-        # Total del dia segun lo guardado en el ultimo 'Guardar y revisar'.
+        # Day total according to what was saved in the last 'Save and review'.
         day_minutes = _day_minutes_from_state(day)
-        titulo = f"**{day.strftime('%A %d/%m/%Y')}**  —  "
+        title = f"**{day.strftime('%A %d/%m/%Y')}**: "
         if day_minutes == wl.WORKDAY_MINUTES:
-            titulo += f"✅ {wl.format_minutes(day_minutes)} / 8h"
+            title += f"✅ {wl.format_minutes(day_minutes)} / 8h"
         elif day_minutes:
-            titulo += f"{wl.format_minutes(day_minutes)} / 8h"
+            title += f"{wl.format_minutes(day_minutes)} / 8h"
         else:
-            titulo += "sin registrar"
-        st.markdown(titulo)
+            title += "nothing logged"
+        st.markdown(title)
 
         for activity in st.session_state.wl_activities:
             col_name, col_time = st.columns([3, 1])
             col_name.markdown(activity)
             col_time.text_input(
-                "tiempo",
+                "time",
                 key=_input_key(day, activity),
                 label_visibility="collapsed",
                 placeholder="2h",
@@ -175,7 +151,7 @@ def _render_day_inputs():
 
 
 def _day_minutes_from_state(day):
-    """Suma los minutos escritos para un dia, leyendo el valor actual de cada input."""
+    """Adds up the minutes typed for a day, reading the current value of each input."""
     total = 0
     for activity in st.session_state.wl_activities:
         _, minutes = wl.parse_time(st.session_state.get(_input_key(day, activity), ""))
@@ -184,7 +160,7 @@ def _day_minutes_from_state(day):
 
 
 def _collect_entries_from_state():
-    """Arma la lista de registros con tiempo leyendo el valor actual de cada input."""
+    """Builds the list of entries with time, reading the current value of each input."""
     entries = []
     for day in st.session_state.wl_workdays:
         for activity, ticket_key in st.session_state.wl_activities.items():
@@ -198,7 +174,7 @@ def _collect_entries_from_state():
 
 
 def _submit_entries(entries):
-    """Envia cada worklog a JaaS y guarda los resultados para mostrarlos."""
+    """Sends each worklog to JaaS and saves the results to show them."""
     results = []
     progress = st.progress(0.0)
     for i, entry in enumerate(entries, 1):
@@ -207,7 +183,7 @@ def _submit_entries(entries):
             entry["ticket"],
             entry["time"],
             entry["day"],
-            entry["activity"],  # el comentario del worklog es el nombre de la actividad
+            entry["activity"],  # the worklog comment is the activity name
         )
         results.append({**entry, "ok": ok, "error": error})
         progress.progress(i / len(entries))
@@ -219,32 +195,32 @@ def _stage_log():
     activities = st.session_state.wl_activities
     workdays = st.session_state.wl_workdays
 
-    # --- barra superior ---
+    # Top bar
     top_a, top_b = st.columns([3, 1.4])
-    top_a.caption(f"conectado como {st.session_state.user_display_name}")
-    if top_b.button("Cambiar versión / fechas", key="wl_btn_back"):
+    top_a.caption(f"connected as {st.session_state.user_display_name}")
+    if top_b.button("Change version / dates", key="wl_btn_back"):
         st.session_state.wl_stage = "setup"
         st.rerun()
 
     version = st.session_state.wl_versions[st.session_state.wl_version_index]
     st.markdown(f"### {st.session_state.wl_project_resolved} · v{version['label']}")
     st.caption(
-        f"{len(activities)} actividad(es) · {len(workdays)} dia(s). "
-        "Escribe el tiempo por actividad (2h · 1h 30m · 45m · 1.5h) y pulsa **Guardar y revisar**. "
-        "Mientras escribes dentro del formulario nada se recarga ni salta."
+        f"{len(activities)} activity(ies) · {len(workdays)} day(s). "
+        "Type the time per activity (2h · 1h 30m · 45m · 1.5h) and press **Save and review**. "
+        "While you type inside the form, nothing reloads or jumps."
     )
 
-    # --- formulario: todos los dias juntos, sin recargas al escribir ---
+    # Form: all the days together, no reloads while typing
     with st.form("wl_log_form"):
         _render_day_inputs()
         st.divider()
-        st.form_submit_button("Guardar y revisar", type="primary")
+        st.form_submit_button("Save and review", type="primary")
 
-    # --- resumen + envio (fuera del formulario) ---
+    # Summary + submission (outside the form)
     entries = _collect_entries_from_state()
-    st.subheader("Resumen")
+    st.subheader("Summary")
     if not entries:
-        st.info("Escribe las horas arriba y pulsa **Guardar y revisar** para ver el resumen.")
+        st.info("Type the hours above and press **Save and review** to see the summary.")
         return
 
     grand_total = sum(e["minutes"] for e in entries)
@@ -253,18 +229,16 @@ def _stage_log():
         if entry["day"] != current_day:
             current_day = entry["day"]
             day_total = sum(e["minutes"] for e in entries if e["day"] == current_day)
-            st.markdown(f"**{current_day.strftime('%A %d/%m')}** — {wl.format_minutes(day_total)}")
+            st.markdown(f"**{current_day.strftime('%A %d/%m')}**: {wl.format_minutes(day_total)}")
         st.caption(f"　{entry['ticket']} · {entry['activity']} → {entry['time']}")
-    st.markdown(f"**Total general: {wl.format_minutes(grand_total)} en {len(entries)} registro(s)**")
+    st.markdown(f"**Grand total: {wl.format_minutes(grand_total)} in {len(entries)} entry(ies)**")
 
-    if st.button("Enviar worklogs a JaaS", type="primary", key="wl_btn_submit"):
+    if st.button("Send worklogs to JaaS", type="primary", key="wl_btn_submit"):
         _submit_entries(entries)
         st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# resultados del envio
-# ---------------------------------------------------------------------------
+# Submission results
 
 def _show_results():
     results = st.session_state.wl_results
@@ -272,36 +246,34 @@ def _show_results():
     fail_count = len(results) - ok_count
 
     if fail_count == 0:
-        st.success(f"Listo: {ok_count} worklog(s) registrados correctamente.")
+        st.success(f"Done: {ok_count} worklog(s) logged successfully.")
     else:
-        st.warning(f"{ok_count} registrados, {fail_count} fallaron. Revisa los que fallaron abajo.")
+        st.warning(f"{ok_count} logged, {fail_count} failed. Check the failed ones below.")
 
     for r in results:
         line = f"{r['day'].strftime('%d/%m')} · {r['activity']} → {r['time']}"
         if r["ok"]:
             st.caption(f"✅ {line}")
         else:
-            st.caption(f"❌ {line} — {r['error']}")
+            st.caption(f"❌ {line}: {r['error']}")
 
     col1, col2 = st.columns(2)
-    if col1.button("Registrar otro periodo", key="wl_btn_new_period"):
+    if col1.button("Log another period", key="wl_btn_new_period"):
         st.session_state.wl_results = None
         st.session_state.wl_stage = "setup"
         st.rerun()
-    if col2.button("Volver al registro", key="wl_btn_back_to_log"):
+    if col2.button("Back to logging", key="wl_btn_back_to_log"):
         st.session_state.wl_results = None
         st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# punto de entrada
-# ---------------------------------------------------------------------------
+# Entry point
 
 def render():
-    """Dibuja el WorkLogger. Da por hecho que ya hay sesion (ver macondo_login)."""
+    """Draws the WorkLogger. Assumes there's already a session (see macondo_login)."""
     _init_state()
 
-    # Si acabamos de enviar, mostramos los resultados por encima de todo.
+    # If we just sent, we show the results above everything else.
     if st.session_state.wl_results is not None:
         _show_results()
         return

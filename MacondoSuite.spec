@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Macondo Suite (Bug Logger + WorkLogger en pestañas).
-# Build:  build_all.bat   (o: python -m PyInstaller MacondoSuite.spec --noconfirm)
-# Resultado: dist\MacondoSuite.exe
+# Macondo Suite (Bug Logger + WorkLogger in tabs).
+# Build:  build_all.bat   (or: python -m PyInstaller MacondoSuite.spec --noconfirm)
+# Result: dist\MacondoSuite.exe
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 APP_FILES = [

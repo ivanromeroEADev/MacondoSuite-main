@@ -1,14 +1,7 @@
 """
-Tema visual compartido de Macondo.
+Colors, fonts and header shared by the three apps.
 
-La paleta (amarillo Macondo, marron, beige), la tipografia y la cabecera con el
-logo viven aqui, en un solo lugar, para que las tres apps -Bug Logger, WorkLogger
-y la suite combinada- se vean igual sin repetir estilos en cada una.
-
-Uso en cada app (apply primero, como primera llamada a Streamlit; luego header):
-    import macondo_theme
-    macondo_theme.apply("Macondo Logger")
-    macondo_theme.header("Macondo Logger")
+Call apply() first (it has to be the first Streamlit call), then header().
 """
 
 import os
@@ -16,36 +9,32 @@ import sys
 
 import streamlit as st
 
-# --- Colores -----------------------------------------------------------------
-# Amarillo Macondo elegido por Ivan. MOSTAZA_OSCURO es el mismo tono mas oscuro
-# para hovers y bordes.
-MOSTAZA = "#f0b802"
-MOSTAZA_OSCURO = "#c28f00"
-MARRON = "#3B2F1E"
+# Colors
+# MUSTARD_DARK is used for hovers and borders.
+MUSTARD = "#f0b802"
+MUSTARD_DARK = "#c28f00"
+BROWN = "#3B2F1E"
 BEIGE = "#F5E6C8"
-FONDO = "#FFFDF7"
+BACKGROUND = "#FFFDF7"
 
-# --- Tipografia --------------------------------------------------------------
-# No se puede empaquetar la fuente real de "skate." (es propietaria), asi que
-# usamos una de Google Fonts parecida: redondeada, geometrica y en minusculas,
-# como el wordmark del juego. Esta en una sola variable para cambiarla facil:
-# alternativas sportier si quieres -> "Baloo 2", "Exo 2", "Chakra Petch".
-FUENTE_TITULO = "Fredoka"      # titulos y el nombre de la app (estilo skate)
-FUENTE_TEXTO = "Inter"         # cuerpo: limpia y legible
+# Typography
+# Google Fonts close to the skate wordmark (the real font is proprietary).
+TITLE_FONT = "Fredoka"      # titles and the app name (skate style)
+BODY_FONT = "Inter"         # body: clean and readable
 
 _CSS = f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family={FUENTE_TITULO.replace(' ', '+')}:wght@400;500;600;700&family={FUENTE_TEXTO.replace(' ', '+')}:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family={TITLE_FONT.replace(' ', '+')}:wght@400;500;600;700&family={BODY_FONT.replace(' ', '+')}:wght@400;500;600&display=swap');
 
 :root {{
-    --macondo-mostaza: {MOSTAZA};
-    --macondo-mostaza-oscuro: {MOSTAZA_OSCURO};
-    --macondo-marron: {MARRON};
+    --macondo-mustard: {MUSTARD};
+    --macondo-mustard-dark: {MUSTARD_DARK};
+    --macondo-brown: {BROWN};
     --macondo-beige: {BEIGE};
 }}
 
-/* Tipografia del cuerpo. Se aplica a los contenedores de texto, no con '*',
-   para no romper los iconos (que usan su propia fuente de iconos). */
+/* Body typography. Applied to the text containers, not with '*',
+   so the icons don't break (they use their own icon font). */
 html, body,
 [data-testid="stAppViewContainer"],
 [data-testid="stSidebar"],
@@ -53,91 +42,87 @@ html, body,
 [data-testid="stAppViewContainer"] label,
 [data-testid="stAppViewContainer"] .stMarkdown,
 div[data-baseweb="select"], input, textarea, button {{
-    font-family: '{FUENTE_TEXTO}', 'Segoe UI', system-ui, sans-serif;
+    font-family: '{BODY_FONT}', 'Segoe UI', system-ui, sans-serif;
 }}
 
-/* Titulos y encabezados con la fuente estilo skate. */
+/* Titles and headings with the skate-style font. */
 h1, h2, h3, h4, .macondo-title {{
-    font-family: '{FUENTE_TITULO}', '{FUENTE_TEXTO}', sans-serif !important;
+    font-family: '{TITLE_FONT}', '{BODY_FONT}', sans-serif !important;
     letter-spacing: 0.3px;
 }}
 
-/* El nombre de la app, al lado del logo. */
+/* The app name, next to the logo. */
 .macondo-title {{
-    color: var(--macondo-mostaza-oscuro);
+    color: var(--macondo-mustard-dark);
     font-weight: 700;
     font-size: 2.1rem;
     margin: 0;
     line-height: 1.1;
 }}
 
-/* Botones primarios (Conectar, Generar con IA, Confirmar y enviar). */
+/* Primary buttons (Connect, Generate with AI, Confirm and send). */
 div.stButton > button[kind="primary"] {{
-    background-color: var(--macondo-mostaza);
-    border-color: var(--macondo-mostaza-oscuro);
-    color: var(--macondo-marron);
+    background-color: var(--macondo-mustard);
+    border-color: var(--macondo-mustard-dark);
+    color: var(--macondo-brown);
     font-weight: 600;
 }}
 div.stButton > button[kind="primary"]:hover {{
-    background-color: var(--macondo-mostaza-oscuro);
-    border-color: var(--macondo-mostaza-oscuro);
+    background-color: var(--macondo-mustard-dark);
+    border-color: var(--macondo-mustard-dark);
     color: #FFFDF7;
 }}
 
-/* Botones secundarios: mismo tono pero solo el contorno. */
+/* Secondary buttons: same shade but outline only. */
 div.stButton > button[kind="secondary"] {{
-    border-color: var(--macondo-mostaza-oscuro);
-    color: var(--macondo-marron);
+    border-color: var(--macondo-mustard-dark);
+    color: var(--macondo-brown);
 }}
 div.stButton > button[kind="secondary"]:hover {{
     background-color: var(--macondo-beige);
-    border-color: var(--macondo-mostaza-oscuro);
+    border-color: var(--macondo-mustard-dark);
 }}
 
-/* Mensajes de estado en tonos calidos, en vez del rojo/verde/azul de Streamlit. */
+/* Status messages in warm tones, instead of Streamlit's red/green/blue. */
 div[data-testid="stAlertContainer"] {{ border-radius: 6px; }}
 div[data-testid="stAlertContainer"][class*="success"],
 div[data-baseweb="notification"][kind="positive"] {{
-    background-color: #EFE6C8; color: var(--macondo-marron);
+    background-color: #EFE6C8; color: var(--macondo-brown);
 }}
 div[data-testid="stAlertContainer"][class*="warning"] {{
-    background-color: #F5DDA0; color: var(--macondo-marron);
+    background-color: #F5DDA0; color: var(--macondo-brown);
 }}
 div[data-testid="stAlertContainer"][class*="error"] {{
-    background-color: #E8C9A0; color: var(--macondo-marron);
+    background-color: #E8C9A0; color: var(--macondo-brown);
 }}
 
-/* Spinner en amarillo. */
-div[data-testid="stSpinner"] > div {{ border-top-color: var(--macondo-mostaza) !important; }}
+/* Yellow spinner. */
+div[data-testid="stSpinner"] > div {{ border-top-color: var(--macondo-mustard) !important; }}
 
-/* Pestañas (suite combinada): la activa en amarillo. */
-button[data-baseweb="tab"][aria-selected="true"] {{ color: var(--macondo-mostaza-oscuro); }}
-div[data-baseweb="tab-highlight"] {{ background-color: var(--macondo-mostaza) !important; }}
+/* Tabs (combined suite): the active one in yellow. */
+button[data-baseweb="tab"][aria-selected="true"] {{ color: var(--macondo-mustard-dark); }}
+div[data-baseweb="tab-highlight"] {{ background-color: var(--macondo-mustard) !important; }}
 
-/* El logo de la cabecera, con esquinas redondeadas. */
+/* The header logo, with rounded corners. */
 .macondo-logo img {{ border-radius: 12px; }}
 </style>
 """
 
 
 def apply(page_title, page_icon="🦋"):
-    """
-    Configura la pagina e inyecta el CSS de Macondo.
-    Debe ser la PRIMERA llamada a Streamlit de la app (set_page_config solo se
-    puede usar una vez y tiene que ir antes que cualquier otro elemento).
-    """
+    """Page config plus the Macondo CSS. Must be the first Streamlit call."""
     st.set_page_config(page_title=page_title, page_icon=page_icon, layout="centered")
     st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def _logo_path():
-    """Ruta al logo, funcione desde el codigo o desde el .exe (carpeta de PyInstaller)."""
+    """Path to the logo, whether running from the code or from the .exe (PyInstaller folder)."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, "macondo_logo.jpg")
 
 
 def header(title):
-    """Dibuja la cabecera: la mariposa de logo a la izquierda y el nombre de la app."""
+    """Draws the header: the butterfly logo on the left and the app name."""
     logo = _logo_path()
     col_logo, col_title = st.columns([1, 5], vertical_alignment="center")
     if os.path.exists(logo):

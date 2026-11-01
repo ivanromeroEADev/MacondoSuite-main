@@ -1,12 +1,7 @@
 """
-Macondo WorkLogger (independiente) - solo el registro de horas en JaaS.
+Macondo WorkLogger on its own (no AI, so no Groq key).
 
-Punto de entrada de la app. Junta tres piezas:
-  - el tema Macondo (macondo_theme)
-  - la conexion a JaaS (macondo_login) -- sin Groq, porque el WorkLogger no usa IA
-  - la pantalla del WorkLogger (worklogger_ui)
-
-Para correrla en modo desarrollo:  python -m streamlit run worklogger_app.py
+Dev mode:  python -m streamlit run worklogger_app.py
 """
 
 import streamlit as st
@@ -18,7 +13,7 @@ import worklogger_ui
 macondo_theme.apply("Macondo WorkLogger")
 macondo_theme.header("Macondo WorkLogger")
 
-# El WorkLogger no usa IA: solo necesita el token de JaaS.
+# The WorkLogger doesn't use AI: it only needs the JaaS token.
 if not macondo_login.login_gate(need_groq=False):
     st.stop()
 

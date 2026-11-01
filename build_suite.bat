@@ -1,6 +1,6 @@
 @echo off
-REM Compila SOLO Macondo Suite (Bug Logger + WorkLogger en pestanas). Doble clic sobre este archivo.
-REM Resultado: dist\MacondoSuite.exe
+REM Builds ONLY Macondo Suite (Bug Logger + WorkLogger in tabs). Double-click this file.
+REM Result: dist\MacondoSuite.exe
 cd /d "%~dp0"
 
 where py >nul 2>nul
@@ -8,27 +8,27 @@ if %errorlevel%==0 (set "PY=py -3") else (set "PY=python")
 
 %PY% --version >nul 2>nul
 if errorlevel 1 (
-    echo No encontre Python. Instala Python 3.11+ desde python.org marcando "Add python.exe to PATH".
+    echo Python not found. Install Python 3.11+ from python.org and check "Add python.exe to PATH".
     pause
     exit /b 1
 )
 
-echo [1/3] Instalando dependencias...
+echo [1/3] Installing dependencies...
 %PY% -m pip install --upgrade -r requirements.txt pyinstaller || goto :error
 
-echo [2/3] Limpiando compilacion anterior...
+echo [2/3] Cleaning up the previous build...
 if exist build rmdir /s /q build
 
-echo [3/3] Compilando MacondoSuite.exe (tarda unos minutos)...
+echo [3/3] Building MacondoSuite.exe (takes a few minutes)...
 %PY% -m PyInstaller MacondoSuite.spec --noconfirm || goto :error
 
 echo.
-echo Listo: dist\MacondoSuite.exe
+echo Done: dist\MacondoSuite.exe
 pause
 exit /b 0
 
 :error
 echo.
-echo La compilacion fallo. Copia el texto de arriba para revisarlo.
+echo The build failed. Copy the text above to review it.
 pause
 exit /b 1

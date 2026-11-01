@@ -1,13 +1,10 @@
 """
-Pruebas con simulacion (sin JaaS real).
+Tests with simulated JaaS data, no network.
 
-Cubren:
-  1. La logica del WorkLogger: deteccion de versiones, recorte de actividades por
-     version, parseo de tiempos, dias habiles y formato de minutos.
-  2. Que las tres apps arrancan hasta la pantalla de conexion sin errores.
-  3. Que la pantalla de registro del WorkLogger se dibuja con datos simulados.
+Covers the WorkLogger logic, that the three apps reach the login screen,
+and the WorkLogger logging screen.
 
-Correr:  python -m pytest test_suite.py -q     (o:  python test_suite.py)
+Run:  python -m pytest test_suite.py -q
 """
 
 from datetime import date
@@ -15,20 +12,18 @@ from datetime import date
 import worklogger_core as wl
 
 
-# ---------------------------------------------------------------------------
-# 1. logica del WorkLogger
-# ---------------------------------------------------------------------------
+# 1. WorkLogger logic
 
 def _fake_issues():
-    """Imita la lista que devuelve JaaS: hijos arriba (lo mas nuevo), padres intercalados."""
+    """Mimics the list JaaS returns: children on top (newest), parents in between."""
     def issue(key, summary):
         return {"key": key, "fields": {"summary": summary}}
     return [
-        issue("FCQV-11", "[QA][Time Tracking] Regression - San Van"),  # 0  hijo v0.31.5
-        issue("FCQV-12", "[QA][Time Tracking] Smoke - Boot"),          # 1  hijo v0.31.5
-        issue("FCQV-10", "Time Tracking 0.31.5"),                       # 2  PADRE v0.31.5
-        issue("FCQV-08", "[QA][Time Tracking] Old task"),               # 3  hijo v0.31.4
-        issue("FCQV-07", "Time Tracking 0.31.4"),                       # 4  PADRE v0.31.4
+        issue("FCQV-11", "[QA][Time Tracking] Regression - San Van"),  # 0  child v0.31.5
+        issue("FCQV-12", "[QA][Time Tracking] Smoke - Boot"),          # 1  child v0.31.5
+        issue("FCQV-10", "Time Tracking 0.31.5"),                       # 2  PARENT v0.31.5
+        issue("FCQV-08", "[QA][Time Tracking] Old task"),               # 3  child v0.31.4
+        issue("FCQV-07", "Time Tracking 0.31.4"),                       # 4  PARENT v0.31.4
     ]
 
 
@@ -41,7 +36,7 @@ def test_find_versions():
 def test_activities_latest_version():
     issues = _fake_issues()
     versions = wl.find_available_versions(issues)
-    acts = wl.activities_for_version(issues, versions, 0)  # la mas nueva
+    acts = wl.activities_for_version(issues, versions, 0)  # the newest
     assert acts == {
         "Regression - San Van": "FCQV-11",
         "Smoke - Boot": "FCQV-12",
@@ -51,7 +46,7 @@ def test_activities_latest_version():
 def test_activities_older_version():
     issues = _fake_issues()
     versions = wl.find_available_versions(issues)
-    acts = wl.activities_for_version(issues, versions, 1)  # la anterior
+    acts = wl.activities_for_version(issues, versions, 1)  # the previous one
     assert acts == {"Old task": "FCQV-08"}
 
 
@@ -71,33 +66,31 @@ def test_format_minutes():
 
 
 def test_workdays_skips_weekend():
-    # Lunes 2026-10-05 a domingo 2026-10-11 -> 5 dias habiles.
+    # Monday 2026-10-05 to Sunday 2026-10-11 -> 5 business days.
     days = wl.get_workdays(date(2026, 10, 5), date(2026, 10, 11))
     assert len(days) == 5
     assert all(d.weekday() < 5 for d in days)
 
 
-# ---------------------------------------------------------------------------
-# 2 y 3. las apps arrancan (usando el AppTest de Streamlit)
-# ---------------------------------------------------------------------------
+# 2 and 3. the apps start up (using Streamlit's AppTest)
 
 def test_apps_reach_login():
     from streamlit.testing.v1 import AppTest
     for app_file in ("macondo_app.py", "worklogger_app.py", "macondo_suite_app.py"):
         at = AppTest.from_file(app_file, default_timeout=30).run()
-        assert not at.exception, f"{app_file} lanzo una excepcion al arrancar"
-        # Antes de conectar, siempre aparece el boton Conectar.
+        assert not at.exception, f"{app_file} raised an exception on startup"
+        # Before connecting, the Connect button always shows up.
         labels = [b.label for b in at.button]
-        assert "Conectar" in labels, f"{app_file} no mostro el boton Conectar"
+        assert "Connect" in labels, f"{app_file} didn't show the Connect button"
 
 
 def test_worklogger_load_versions_button():
-    """Regresion: pulsar 'Cargar versiones' no debe chocar con el widget wl_project."""
+    """Regression: pressing 'Load versions' must not clash with the wl_project widget."""
     from streamlit.testing.v1 import AppTest
     import worklogger_core
 
     issues = _fake_issues()
-    # Evitamos la red: fetch_all_issues devuelve datos simulados.
+    # We avoid the network: fetch_all_issues returns simulated data.
     worklogger_core.fetch_all_issues = lambda token, project=worklogger_core.DEFAULT_PROJECT: issues
 
     at = AppTest.from_file("worklogger_app.py", default_timeout=30)
@@ -108,15 +101,15 @@ def test_worklogger_load_versions_button():
     at.run()
     assert not at.exception
 
-    # Click en "Cargar versiones" -> antes reventaba al reasignar wl_project.
-    button = next(b for b in at.button if b.label == "Cargar versiones")
+    # Click on "Load versions" -> it used to crash when reassigning wl_project.
+    button = next(b for b in at.button if b.label == "Load versions")
     button.click().run()
-    assert not at.exception, "Cargar versiones lanzo una excepcion"
+    assert not at.exception, "Load versions raised an exception"
     assert at.session_state["wl_project_resolved"] == "FCQV"
 
 
 def _log_stage_app():
-    """Prepara un AppTest del WorkLogger ya en la etapa de registro, con datos simulados."""
+    """Sets up a WorkLogger AppTest already in the logging stage, with simulated data."""
     from streamlit.testing.v1 import AppTest
     import worklogger_core
 
@@ -143,29 +136,29 @@ def _log_stage_app():
 
 
 def test_worklogger_log_screen_with_fake_data():
-    """La pantalla de registro dibuja todos los dias dentro de un formulario."""
+    """The logging screen draws every day inside a form."""
     at = _log_stage_app().run()
-    assert not at.exception, "la pantalla de registro lanzo una excepcion"
-    assert "Cambiar versión / fechas" in [b.label for b in at.button]
-    # Sin selector de dia (antes saltaba). Todos los inputs visibles: 2 act x 2 dias = 4.
+    assert not at.exception, "the logging screen raised an exception"
+    assert "Change version / dates" in [b.label for b in at.button]
+    # No day selector (it used to jump). Every input visible: 2 activities x 2 days = 4.
     assert len(at.selectbox) == 0
     assert len(at.text_input) == 4
 
 
 def test_worklogger_time_persists_and_counts():
-    """Regresion: una hora escrita se conserva (todos los inputs siempre dibujados)
-    y el dia correcto la cuenta, sin saltar a otra fecha."""
+    """Regression: a typed hour is kept (every input is always drawn)
+    and the right day counts it, without jumping to another date."""
     import worklogger_ui
 
     at = _log_stage_app()
-    # Simulamos que ya se habia escrito 2h en una actividad del SEGUNDO dia.
+    # We simulate that 2h had already been typed in an activity on the SECOND day.
     key = worklogger_ui._input_key(date(2026, 10, 6), "Regression - San Van")
     at.session_state[key] = "2h"
     at.run()
     assert not at.exception
-    # El input conserva la hora.
+    # The input keeps the hour.
     assert "2h" in [ti.value for ti in at.text_input]
-    # Y aparece bajo el 06/10 en el resumen (el dia correcto, no otro).
+    # And it shows up under 06/10 in the summary (the right day, not another one).
     md = " ".join(m.value or "" for m in at.markdown)
     assert "2h" in md and "06/10" in md
 
@@ -184,5 +177,5 @@ if __name__ == "__main__":
         except Exception:
             print(f"FAIL  {test.__name__}")
             traceback.print_exc()
-    print(f"\n{passed}/{len(tests)} pruebas OK")
+    print(f"\n{passed}/{len(tests)} tests OK")
     sys.exit(0 if passed == len(tests) else 1)

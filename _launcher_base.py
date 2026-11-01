@@ -1,10 +1,8 @@
 """
-Base compartida de los tres .exe.
+Startup code for the .exe files.
 
-Cada launcher (macondo, worklogger, suite) solo dice que archivo de app arranca
-y llama a run(). Aqui esta toda la fontaneria: buscar un puerto libre, abrir el
-navegador y lanzar Streamlit en modo headless con el tema Macondo embebido
-(para no depender de la carpeta .streamlit junto al .exe).
+Picks a free port, opens the browser and runs Streamlit headless with the Macondo
+theme passed as flags, so the .exe doesn't need the .streamlit folder.
 """
 
 import os
@@ -16,19 +14,19 @@ import webbrowser
 
 from streamlit.web import cli as stcli
 
-import macondo_theme  # para reutilizar exactamente los mismos colores del tema
+import macondo_theme  # to reuse exactly the same theme colors
 
 PREFERRED_PORT = 8501
 
 
 def _resource_path(name):
-    """Ruta a un archivo, funcione desde el .exe (carpeta temporal de PyInstaller) o desde el codigo."""
+    """Path to a file, whether running from the .exe (PyInstaller temp folder) or from the code."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, name)
 
 
 def _free_port(preferred):
-    """Usa el puerto preferido; si esta ocupado (otra app abierta), toma uno libre."""
+    """Uses the preferred port; if it's taken (another app is open), takes a free one."""
     for port in (preferred, 0):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
@@ -40,12 +38,12 @@ def _free_port(preferred):
 
 
 def _open_browser(port):
-    time.sleep(3)  # darle tiempo a Streamlit a levantar antes de abrir el navegador
+    time.sleep(3)  # give Streamlit time to start before opening the browser
     webbrowser.open(f"http://localhost:{port}")
 
 
 def run(app_file):
-    """Arranca la app indicada. app_file es el nombre del .py (ej. 'macondo_app.py')."""
+    """Starts the given app. app_file is the name of the .py (e.g. 'macondo_app.py')."""
     port = _free_port(PREFERRED_PORT)
     threading.Thread(target=_open_browser, args=(port,), daemon=True).start()
     sys.argv = [
@@ -55,12 +53,12 @@ def run(app_file):
         "--server.address=127.0.0.1",
         f"--server.port={port}",
         "--browser.gatherUsageStats=false",
-        # Tema Macondo embebido, tomando los colores del propio macondo_theme.
+        # Built-in Macondo theme, taking the colors from macondo_theme itself.
         "--theme.base=light",
-        f"--theme.primaryColor={macondo_theme.MOSTAZA}",
-        f"--theme.backgroundColor={macondo_theme.FONDO}",
+        f"--theme.primaryColor={macondo_theme.MUSTARD}",
+        f"--theme.backgroundColor={macondo_theme.BACKGROUND}",
         f"--theme.secondaryBackgroundColor={macondo_theme.BEIGE}",
-        f"--theme.textColor={macondo_theme.MARRON}",
+        f"--theme.textColor={macondo_theme.BROWN}",
         "--theme.font=sans serif",
     ]
     sys.exit(stcli.main())

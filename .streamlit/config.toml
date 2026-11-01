@@ -1,5 +1,5 @@
-# Tema Macondo para correr en modo desarrollo (python -m streamlit run ...).
-# Los .exe NO usan este archivo: el tema va embebido en _launcher_base.py.
+# Macondo theme for running in development mode (python -m streamlit run ...).
+# The .exe files do NOT use this file: the theme is built into _launcher_base.py.
 [theme]
 base = "light"
 primaryColor = "#f0b802"

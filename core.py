@@ -10,14 +10,13 @@ from groq import Groq
 JAAS_URL      = "https://api.jaas.ea.com"
 GROQ_MODEL    = "openai/gpt-oss-120b"
 LEARNING_FILE_TEMPLATE = "buglogger_examples_{project}.json"
-# Los ejemplos aprendidos viven en una carpeta fija del usuario, no junto al .exe:
-# asi sobreviven a actualizaciones de la app y se pueden respaldar.
+# Per-user folder, so learned examples survive app updates.
 DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "MacondoLogger")
 MAX_EXAMPLES  = 3
 KEYRING_SERVICE = "sk8-buglogger"
 SHARED_GROQ_KEY = os.environ.get("SK8_BUGLOGGER_GROQ_KEY", "")
 
-# solo se usa si JaaS no deja listar los proyectos del usuario
+# only used if JaaS doesn't allow listing the user's projects
 FALLBACK_PROJECTS = {"SK8": "skate.", "PL1": "PlaygroundBugLogger"}
 
 BRANCHES = [
@@ -33,7 +32,7 @@ BRANCHES = [
 
 BUG_TYPES = ["In-Game", "UI", "Server"]
 
-# nombre logico -> nombre exacto del campo tal como aparece en Jira (field.name en editmeta)
+# logical name -> exact field name as it appears in Jira (field.name in editmeta)
 FIELD_NAMES = {
     "pillar":        "Pillar",
     "game_spine":    "Game Spine",
@@ -49,10 +48,7 @@ FIELD_NAMES = {
 }
 
 
-# ---------------------------------------------------------------------------
-# credenciales: guardadas cifradas via Windows Credential Manager (keyring),
-# nunca en texto plano en disco. Una por usuario del sistema operativo.
-# ---------------------------------------------------------------------------
+# Credentials, stored encrypted with keyring (Windows Credential Manager).
 
 def save_jaas_token(token):
     keyring.set_password(KEYRING_SERVICE, "jaas_token", token)
@@ -73,15 +69,7 @@ def delete_jaas_token():
 
 
 def get_groq_key():
-    """
-    La Groq key no identifica a nadie (solo genera texto), asi que no hace
-    falta que cada persona tenga la suya, pero cada PC necesita configurarla
-    una vez. Prioridad:
-      1. Guardada en keyring (la app la pide una sola vez en el primer login)
-      2. Variable de entorno SK8_BUGLOGGER_GROQ_KEY, por si alguien prefiere
-         setearla asi en vez de guardarla desde la UI
-    Devuelve "" si no hay ninguna configurada.
-    """
+    """Saved key first, then the SK8_BUGLOGGER_GROQ_KEY env var. "" if neither."""
     try:
         saved = keyring.get_password(KEYRING_SERVICE, "groq_key")
         if saved:
@@ -95,9 +83,7 @@ def save_groq_key(key):
     keyring.set_password(KEYRING_SERVICE, "groq_key", key)
 
 
-# ---------------------------------------------------------------------------
-# conexion, proyectos del usuario y campos habilitados por proyecto
-# ---------------------------------------------------------------------------
+# Connection, the user's projects and the fields enabled per project
 
 STANDARD_FIELDS = {"summary", "description", "reporter", "priority", "versions", "project", "issuetype", "attachment"}
 
@@ -115,7 +101,7 @@ def test_connection(token):
 
 
 def _has_create_permission(token, project_key):
-    """True/False si JaaS responde, None si no se pudo verificar."""
+    """True/False if JaaS answers, None if it couldn't be checked."""
     try:
         res = requests.get(
             f"{JAAS_URL}/rest/api/2/mypermissions",
@@ -132,7 +118,7 @@ def _has_create_permission(token, project_key):
 
 
 def _recent_project_keys(token):
-    """Proyectos donde el usuario reporto bugs hace poco, el mas reciente primero."""
+    """Projects where the user reported bugs recently, most recent first."""
     try:
         res = requests.get(
             f"{JAAS_URL}/rest/api/2/search",
@@ -154,16 +140,13 @@ def _recent_project_keys(token):
 
 def list_user_projects(token, username, workers=10):
     """
-    Proyectos donde el usuario puede crear bugs.
-      1. /project: todos los proyectos que puede ver.
-      2. mypermissions (CREATE_ISSUES) por proyecto, en paralelo: se queda con los que puede usar.
-      3. Marca 'recent' (donde reporto hace poco) y 'is_lead' (es el lead del proyecto).
-    Devuelve (lista, verificado). Si ninguna verificacion de permisos funciona,
-    devuelve todos los visibles con verificado=False para que la UI avise.
+    Projects the user can create bugs in, recent ones and the ones they lead first.
+    Returns (projects, verified). verified is False when JaaS wouldn't let us
+    check permissions, so every visible project is returned.
     """
     res = requests.get(f"{JAAS_URL}/rest/api/2/project", headers=_headers(token), params={"expand": "lead"}, timeout=60)
     if res.status_code != 200:
-        raise RuntimeError(f"no pude listar los proyectos ({res.status_code})")
+        raise RuntimeError(f"couldn't list the projects ({res.status_code})")
     visible = res.json()
 
     recent = _recent_project_keys(token)
@@ -194,10 +177,10 @@ def list_user_projects(token, username, workers=10):
     return sorted(projects, key=order), verified
 
 
-# --- lectura de campos ------------------------------------------------------
+# Reading fields
 
 def _get_paged(token, path, page_size=200):
-    """Junta todas las paginas de un endpoint paginado de Jira (campo 'values')."""
+    """Collects every page of a paginated Jira endpoint ('values' field)."""
     items, start = [], 0
     while True:
         res = requests.get(
@@ -213,7 +196,7 @@ def _get_paged(token, path, page_size=200):
             return data
         page = data.get("values")
         if page is None:
-            return data.get("fields") or data.get("issueTypes")  # forma alternativa, sin paginar
+            return data.get("fields") or data.get("issueTypes")  # alternative shape, not paginated
         items.extend(page)
         total = data.get("total")
         if data.get("isLast", True) or not page or (total is not None and len(items) >= total):
@@ -222,7 +205,7 @@ def _get_paged(token, path, page_size=200):
 
 
 def _index_fields(raw):
-    """Los campos pueden venir como lista o como dict; se normaliza a {fieldId: campo}."""
+    """Fields can come as a list or as a dict; normalized to {fieldId: field}."""
     if isinstance(raw, dict):
         out = {}
         for field_id, field in raw.items():
@@ -242,7 +225,7 @@ def _options(field):
 
 
 def _catalogs_and_ids(fields):
-    """Resuelve los campos conocidos POR NOMBRE, porque el customfield_id cambia entre proyectos."""
+    """Resolves the known fields BY NAME, because the customfield_id changes between projects."""
     by_name = {f.get("name", "").strip().lower(): (fid, f) for fid, f in fields.items()}
     catalogs, field_ids = {}, {}
     for logical, jira_name in FIELD_NAMES.items():
@@ -259,7 +242,7 @@ def _catalogs_and_ids(fields):
 
 
 def _field_kind(field):
-    """Tipo de control que la app sabe dibujar para un campo. None si no lo soporta."""
+    """Kind of control the app knows how to draw for a field. None if it's not supported."""
     schema = field.get("schema", {})
     kind, items = schema.get("type"), schema.get("items")
     has_options = bool(field.get("allowedValues"))
@@ -279,7 +262,7 @@ def _field_kind(field):
 
 
 def _extra_fields(fields, known_ids):
-    """Campos habilitados que no son los conocidos ni los estandar."""
+    """Enabled fields that are neither the known ones nor the standard ones."""
     extras, unsupported = [], []
     for field_id, field in fields.items():
         if field_id in STANDARD_FIELDS or field_id in known_ids:
@@ -302,7 +285,7 @@ def _build_meta(project, source, fields, issuetype_id, issuetype_name, ref_ticke
     extras, unsupported = _extra_fields(fields, known_ids)
     return {
         "project": project,
-        "source": source,  # "createmeta" (pantalla de creacion real) o "editmeta" (ticket de referencia)
+        "source": source,  # "createmeta" (the real create screen) or "editmeta" (reference ticket)
         "ref_ticket": ref_ticket,
         "issuetype_id": issuetype_id,
         "issuetype_name": issuetype_name,
@@ -317,13 +300,7 @@ def _build_meta(project, source, fields, issuetype_id, issuetype_name, ref_ticke
 
 
 def fetch_create_meta(token, project):
-    """
-    Campos habilitados en la pantalla de CREACION del proyecto, para el tipo Bug.
-    Usa los endpoints de Jira DC 8.4+:
-      /issue/createmeta/{proyecto}/issuetypes
-      /issue/createmeta/{proyecto}/issuetypes/{id}
-    Devuelve None si no estan disponibles o si el usuario no tiene permiso de crear ahi.
-    """
+    """Fields on the project's create screen for the Bug type (Jira DC 8.4+). None if unavailable."""
     types = _get_paged(token, f"/rest/api/2/issue/createmeta/{project}/issuetypes")
     if not types:
         return None
@@ -345,7 +322,7 @@ def fetch_create_meta(token, project):
 
 
 def find_reference_ticket(token, reporter_username, project):
-    """Ticket reciente del proyecto para leer editmeta: primero uno del usuario, si no, cualquiera."""
+    """Recent ticket from the project to read editmeta: first one by the user, otherwise any."""
     for jql in (
         f'project = {project} AND reporter = "{reporter_username}" ORDER BY created DESC',
         f"project = {project} ORDER BY created DESC",
@@ -362,7 +339,7 @@ def find_reference_ticket(token, reporter_username, project):
 
 
 def fetch_edit_meta(token, project, issue_key):
-    """Plan B: campos de un ticket existente. Puede incluir campos que no estan en la pantalla de creacion."""
+    """Plan B: fields of an existing ticket. May include fields that aren't on the create screen."""
     res = requests.get(
         f"{JAAS_URL}/rest/api/2/issue/{issue_key}?expand=editmeta",
         headers=_headers(token),
@@ -377,12 +354,7 @@ def fetch_edit_meta(token, project, issue_key):
 
 
 def load_project_meta(token, reporter_username, project):
-    """
-    Punto de entrada unico al elegir un proyecto:
-      1. pantalla de creacion real (createmeta)
-      2. si no esta disponible, editmeta de un ticket de referencia
-    Devuelve el dict meta, o None si no se pudo leer ninguna de las dos.
-    """
+    """Reads the create screen, or a reference ticket if that fails. None if neither works."""
     try:
         meta = fetch_create_meta(token, project)
     except requests.RequestException:
@@ -399,15 +371,11 @@ def load_project_meta(token, reporter_username, project):
 
 
 def fetch_project_style(token, project, issuetype_name="Bug", limit=20):
-    """
-    Estilo real del proyecto: summaries y descriptions de bugs recientes.
-    Primero los del propio usuario; si no tiene, los de cualquiera en el proyecto.
-    Nunca falla: si JaaS no responde, devuelve listas vacias.
-    """
+    """Recent summaries and descriptions from the project, the user's own first. Never raises."""
     style = {"summaries": [], "descriptions": [], "source": None}
     for who, jql in (
-        ("tuyos", f'project = "{project}" AND issuetype = "{issuetype_name}" AND reporter = currentUser() ORDER BY created DESC'),
-        ("del proyecto", f'project = "{project}" AND issuetype = "{issuetype_name}" ORDER BY created DESC'),
+        ("of yours", f'project = "{project}" AND issuetype = "{issuetype_name}" AND reporter = currentUser() ORDER BY created DESC'),
+        ("from the project", f'project = "{project}" AND issuetype = "{issuetype_name}" ORDER BY created DESC'),
     ):
         try:
             res = requests.get(
@@ -426,7 +394,7 @@ def fetch_project_style(token, project, issuetype_name="Bug", limit=20):
             description = (fields.get("description") or "").strip()
             if summary and len(style["summaries"]) < 6:
                 style["summaries"].append(summary)
-            # solo descripciones con estructura (varias lineas), no tickets de una frase
+            # only descriptions with structure (several lines), not one-sentence tickets
             if len(description) >= 150 and description.count("\n") >= 3 and len(style["descriptions"]) < MAX_EXAMPLES:
                 style["descriptions"].append(description[:2500])
         if style["descriptions"]:
@@ -435,9 +403,7 @@ def fetch_project_style(token, project, issuetype_name="Bug", limit=20):
     return style
 
 
-# ---------------------------------------------------------------------------
-# machine learning local: ejemplos aprendidos de correcciones
-# ---------------------------------------------------------------------------
+# Local machine learning: examples learned from corrections
 
 def _examples_path(project):
     return os.path.join(DATA_DIR, LEARNING_FILE_TEMPLATE.format(project=project))
@@ -446,7 +412,7 @@ def _examples_path(project):
 def load_examples(project):
     path = _examples_path(project)
     if not os.path.exists(path):
-        legacy = LEARNING_FILE_TEMPLATE.format(project=project)  # versiones viejas lo guardaban junto a la app
+        legacy = LEARNING_FILE_TEMPLATE.format(project=project)  # older versions saved it next to the app
         path = legacy if os.path.exists(legacy) else None
     if not path:
         return []
@@ -493,7 +459,7 @@ def project_style_block(style):
 
 
 def learning_status(project, style):
-    """Para mostrar en la UI de donde esta aprendiendo la app en este proyecto."""
+    """For showing in the UI where the app is learning from in this project."""
     return {
         "corrections": len(load_examples(project)),
         "real_tickets": len((style or {}).get("descriptions") or []),
@@ -501,18 +467,7 @@ def learning_status(project, style):
     }
 
 
-# ---------------------------------------------------------------------------
-# metricas de uso: de aqui sale la accuracy REAL del ML, medida con el uso.
-#
-# Por cada bug se guardan cuatro numeros por proyecto:
-#   generated      -> cuantas veces se genero un borrador con IA
-#   sent           -> cuantos se enviaron a JaaS
-#   corrected      -> cuantos se editaron antes de enviar
-#   similarity_sum -> suma del parecido (0..1) entre el borrador y lo enviado
-#
-# accuracy = enviados SIN reescribir / enviados. Es el % que de verdad importa:
-# cuanto menos hay que corregir, mas acierta el modelo con el estilo del proyecto.
-# ---------------------------------------------------------------------------
+# Usage metrics per project. accuracy = tickets sent without rewriting / tickets sent.
 
 STATS_FILE_TEMPLATE = "buglogger_stats_{project}.json"
 _STATS_DEFAULT = {"generated": 0, "sent": 0, "corrected": 0, "similarity_sum": 0.0}
@@ -543,31 +498,26 @@ def _save_stats(project, stats):
 
 
 def record_generation(project):
-    """Se llama cada vez que la IA genera un borrador."""
+    """Called every time the AI generates a draft."""
     stats = load_stats(project)
     stats["generated"] += 1
     _save_stats(project, stats)
 
 
 def record_submission(project, was_corrected, generated_text, final_text):
-    """Se llama al enviar un ticket. Guarda si se corrigio y cuanto cambio el texto."""
+    """Called when a ticket is sent. Saves whether it was corrected and how much the text changed."""
     stats = load_stats(project)
     stats["sent"] += 1
     if was_corrected:
         stats["corrected"] += 1
-    # 1.0 = identico al borrador, 0.0 = totalmente reescrito
+    # 1.0 = identical to the draft, 0.0 = completely rewritten
     ratio = difflib.SequenceMatcher(None, generated_text or "", final_text or "").ratio()
     stats["similarity_sum"] += ratio
     _save_stats(project, stats)
 
 
 def accuracy_report(project):
-    """
-    Resumen listo para mostrar o para el brochure:
-      accuracy_pct     -> % de enviados sin reescribir
-      avg_similarity_pct -> % de parecido promedio entre borrador y enviado
-    Devuelve None en los porcentajes cuando todavia no hay envios.
-    """
+    """Accuracy and average similarity for a project. Percentages are None until something is sent."""
     stats = load_stats(project)
     sent = stats["sent"]
     unedited = sent - stats["corrected"]
@@ -581,9 +531,7 @@ def accuracy_report(project):
     }
 
 
-# ---------------------------------------------------------------------------
-# groq
-# ---------------------------------------------------------------------------
+# Groq
 
 def ask_groq(client, system_prompt, user_prompt):
     res = client.chat.completions.create(
@@ -618,11 +566,7 @@ DESCRIPTION_RULES = (
     "- Return only the description text."
 )
 
-# Ejemplos de estilo para el equipo skate. Sirven de base cuando un proyecto
-# todavia no tiene sus propios ejemplos aprendidos (ver recent_examples_block).
-# Mencionan cosas propias del juego (San Van, Skate Pass) a proposito, como
-# muestra real de nivel de detalle -- no se deben usar para otro juego una vez
-# que ese proyecto ya tenga ejemplos propios guardados.
+# Base style from real skate bugs. Only used when a project has no corrections or real tickets yet.
 SK8_STYLE_EXAMPLES = (
     "\n=== EXAMPLE 1 ===\n"
     "The challenge OTL S04-OwnTheLot-001 does not display the pre-challenge countdown timer when played in Co-op. "
@@ -727,19 +671,14 @@ def generate_description(client, project, raw_bug, cl, branch, pillar, feature, 
         if value:
             lines.append(f"{label}: {value}")
 
-    # Prioridad de aprendizaje por proyecto:
-    #   1. correcciones del propio tester en este proyecto (lo mas fiel)
-    #   2. tickets reales recientes del proyecto en JaaS (estructura de esa franquicia)
-    #   3. solo si no hay nada de lo anterior: estilo base de SK8
+    # Own corrections and real project tickets first; the skate base style only if there are none.
     own = recent_examples_block(project)
     real = project_style_block(style)
     system = DESCRIPTION_RULES + (own + real if (own or real) else SK8_STYLE_EXAMPLES)
     return ask_groq(client, system, "\n".join(lines))
 
 
-# ---------------------------------------------------------------------------
-# submit
-# ---------------------------------------------------------------------------
+# Submit
 
 def match(value, options):
     if not value or not options:
@@ -780,7 +719,7 @@ def _error_map(res):
 
 
 def explain_error(res, meta):
-    """Convierte el error de JaaS en lineas legibles, con el nombre del campo."""
+    """Turns the JaaS error into readable lines, with the field name."""
     try:
         data = res.json()
     except ValueError:
@@ -795,11 +734,8 @@ def explain_error(res, meta):
 
 def submit_ticket(token, ticket, meta):
     """
-    Crea el bug en UNA sola llamada, mandando solo los campos que el proyecto
-    tiene habilitados (incluidos los obligatorios). El reporter no se manda:
-    JaaS usa al dueno del token.
-    Si JaaS rechaza campos OPCIONALES, se quitan y se reintenta una vez; quedan como warnings.
-    Devuelve (respuesta_de_jaas, warnings).
+    Creates the bug with only the fields the project allows. If JaaS rejects
+    optional fields, they're dropped and it retries once. Returns (response, warnings).
     """
     enabled = meta.get("enabled_ids")
     catalogs, field_ids = meta["catalogs"], meta["field_ids"]
@@ -847,7 +783,7 @@ def submit_ticket(token, ticket, meta):
         try:
             fields[field_ids["changelist"]] = float(ticket["cl"])
         except ValueError:
-            warnings.append("Changelist Found: el CL no es un numero, no se envio ese campo.")
+            warnings.append("Changelist Found: the CL isn't a number, so that field wasn't sent.")
 
     for extra in meta.get("extra_fields", []):
         value = (ticket.get("extras") or {}).get(extra["id"])
@@ -873,14 +809,10 @@ def submit_ticket(token, ticket, meta):
 
 
 def attach_files(token, issue_key, files):
-    """
-    Sube archivos a un ticket ya creado.
-    files: lista de tuplas (filename, bytes, content_type)
-    Devuelve lista de (filename, ok:bool, error_msg:str|None)
-    """
+    """Uploads (filename, bytes, content_type) files to a ticket. Returns (filename, ok, error) per file."""
     headers = {
         "Authorization": f"Bearer {token}",
-        "X-Atlassian-Token": "no-check",  # requerido por Jira para subir attachments
+        "X-Atlassian-Token": "no-check",  # required by Jira to upload attachments
     }
     results = []
     for filename, filebytes, content_type in files:

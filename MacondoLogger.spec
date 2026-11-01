@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Macondo Logger (solo Bug Logger).
-# Build:  build_all.bat   (o: python -m PyInstaller MacondoLogger.spec --noconfirm)
-# Resultado: dist\MacondoLogger.exe
+# Macondo Logger (Bug Logger only).
+# Build:  build_all.bat   (or: python -m PyInstaller MacondoLogger.spec --noconfirm)
+# Result: dist\MacondoLogger.exe
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
-# Archivos .py de la app. Streamlit los carga en tiempo de ejecucion (no los ve
-# el analisis estatico de PyInstaller), asi que hay que empaquetarlos como datos
-# para que queden juntos y se puedan importar entre si.
+# The app's .py files. Streamlit loads them at run time (PyInstaller's static
+# analysis doesn't see them), so they have to be bundled as data
+# so they stay together and can import each other.
 APP_FILES = [
     "launcher_macondo.py",
     "macondo_app.py",
@@ -30,13 +30,13 @@ datas += collect_data_files("streamlit")
 for pkg in ("streamlit", "groq", "requests", "keyring"):
     datas += copy_metadata(pkg)
 
-# groq trae su codigo que streamlit no arrastra solo: lo recogemos completo.
+# groq brings code that streamlit doesn't pull in on its own: we collect all of it.
 for pkg in ("groq",):
     d, b, h = collect_all(pkg)
     datas += d; binaries += b; hiddenimports += h
 
-# keyring descubre su backend de Windows (Credential Manager) en tiempo de
-# ejecucion: hay que empaquetarlo completo o el .exe falla con "No module named keyring".
+# keyring discovers its Windows backend (Credential Manager) at run time:
+# it has to be bundled in full or the .exe fails with "No module named keyring".
 for pkg in ("keyring", "jaraco.classes", "jaraco.functools", "jaraco.context", "win32ctypes"):
     try:
         d, b, h = collect_all(pkg)
@@ -58,6 +58,6 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, a.binaries, a.datas, [],
     name="MacondoLogger",
-    console=False,  # sin ventana negra de consola
+    console=False,  # no black console window
     upx=False,
 )

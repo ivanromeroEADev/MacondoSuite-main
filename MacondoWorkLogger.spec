@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Macondo WorkLogger (solo registro de horas).
-# Build:  build_all.bat   (o: python -m PyInstaller MacondoWorkLogger.spec --noconfirm)
-# Resultado: dist\MacondoWorkLogger.exe
+# Macondo WorkLogger (time logging only).
+# Build:  build_all.bat   (or: python -m PyInstaller MacondoWorkLogger.spec --noconfirm)
+# Result: dist\MacondoWorkLogger.exe
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 APP_FILES = [
@@ -28,8 +28,8 @@ datas += collect_data_files("streamlit")
 for pkg in ("streamlit", "groq", "requests", "keyring"):
     datas += copy_metadata(pkg)
 
-# El WorkLogger no usa IA, pero core.py importa groq al cargarse, asi que el
-# paquete tiene que estar igual (si no, falla el import de core).
+# The WorkLogger doesn't use AI, but core.py imports groq when it loads, so the
+# package has to be included anyway (otherwise importing core fails).
 for pkg in ("groq",):
     d, b, h = collect_all(pkg)
     datas += d; binaries += b; hiddenimports += h

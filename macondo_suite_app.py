@@ -1,10 +1,7 @@
 """
-Macondo Suite - Bug Logger y WorkLogger en una sola app, con pestañas.
+Macondo Suite: Bug Logger and WorkLogger in tabs, sharing one login.
 
-Es la misma app del Bug Logger mas una pestaña para el WorkLogger. Una sola
-conexion a JaaS (y Groq) sirve para las dos pestañas, porque comparten sesion.
-
-Para correrla en modo desarrollo:  python -m streamlit run macondo_suite_app.py
+Dev mode:  python -m streamlit run macondo_suite_app.py
 """
 
 import streamlit as st
@@ -17,8 +14,8 @@ import worklogger_ui
 macondo_theme.apply("Macondo Suite")
 macondo_theme.header("Macondo Suite")
 
-# Hay una pestaña con IA (Bug Logger), asi que la conexion pide la Groq API Key.
-# Esa misma sesion sirve tambien para el WorkLogger.
+# There's a tab with AI (Bug Logger), so the connection asks for the Groq API Key.
+# That same session also works for the WorkLogger.
 if not macondo_login.login_gate(need_groq=True):
     st.stop()
 
